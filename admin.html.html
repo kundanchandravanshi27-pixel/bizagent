@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Voice Agent - Outbound Campaign Dashboard</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- SheetJS (xlsx parser) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- Firebase App, Database & Auth (compat SDK for direct HTML usage) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .badge-pending { background-color: #f3f4f6; color: #4b5563; }
+    .badge-dialing { background-color: #fef3c7; color: #92400e; animation: pulse 2s infinite; }
+    .badge-ringing { background-color: #e0e7ff; color: #3730a3; animation: pulse 1.5s infinite; }
+    .badge-answered { background-color: #d1fae5; color: #065f46; }
+    .badge-failed { background-color: #fee2e2; color: #991b1b; }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen">
+
+  <!-- Top Navigation -->
+  <header class="border-b border-slate-800 bg-slate-950/80 backdrop-blur sticky top-0 z-40 px-6 py-4">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="h-10 w-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+          <i data-lucide="phone-call" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <h1 class="text-xl font-bold bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">BotXPro Outbound AI</h1>
+          <p class="text-xs text-slate-400">LiveKit Cloud + Vobiz SIP Trunk Campaign Portal</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3 flex-wrap justify-end">
+        <!-- Render Backend Config -->
+        <div class="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg p-1.5 px-3">
+          <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" id="backendDot"></span>
+          <label class="text-xs font-semibold text-slate-400">Backend API:</label>
+          <input 
+            type="text" 
+            id="backendUrl" 
+            placeholder="https://bizagent-3r8z.onrender.com" 
+            class="bg-transparent border-0 text-xs text-indigo-300 focus:ring-0 w-60 outline-none font-mono"
+          />
+          <button onclick="testBackendConnection()" class="text-xs bg-slate-800 hover:bg-slate-700 px-2 py-1 rounded text-slate-300 transition">
+            Test
+          </button>
+        </div>
+
+        <!-- Authenticated User Display & Logout -->
+        <div id="navUserSection" class="hidden flex items-center gap-2">
+          <span class="text-xs text-indigo-300 bg-indigo-950/60 border border-indigo-800/50 px-2.5 py-1.5 rounded-lg flex items-center gap-1.5">
+            <i data-lucide="user" class="w-3.5 h-3.5"></i>
+            <span id="userEmailBadge">Admin</span>
+          </span>
+          <button onclick="handleLogout()" class="text-xs bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/40 px-3 py-1.5 rounded-lg transition flex items-center gap-1.5">
+            <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+            Logout
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Login Gate Container -->
+  <div id="authContainer" class="flex items-center justify-center min-h-[75vh] px-4">
+    <div class="bg-slate-950/90 border border-slate-800 rounded-2xl p-8 max-w-md w-full shadow-2xl space-y-6">
+      <div class="text-center space-y-2">
+        <div class="h-12 w-12 rounded-2xl bg-indigo-600 flex items-center justify-center text-white mx-auto shadow-lg shadow-indigo-500/30">
+          <i data-lucide="shield-check" class="w-6 h-6"></i>
+        </div>
+        <h2 class="text-xl font-bold text-white">BotXPro Portal Sign In</h2>
+        <p class="text-xs text-slate-400">Enter your Firebase email & password to access campaign controls</p>
+      </div>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Email Address</label>
+          <input type="email" id="authEmail" placeholder="admin@botxpro.com" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Password</label>
+          <input type="password" id="authPassword" placeholder="••••••••" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500" />
+        </div>
+        <div id="authError" class="hidden text-xs text-rose-400 bg-rose-950/50 border border-rose-800/40 p-2.5 rounded-lg"></div>
+
+        <button onclick="handleEmailLogin()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-lg text-sm shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2">
+          <i data-lucide="log-in" class="w-4 h-4"></i> Sign In to Portal
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dashboard Main Container (Locked behind login) -->
+  <main id="appContainer" class="hidden max-w-7xl mx-auto p-6 space-y-6">
+
+    <!-- KPI Metric Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-4">
+        <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Total Leads</p>
+        <p class="text-2xl font-bold text-white mt-1" id="statTotal">0</p>
+      </div>
+      <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-4">
+        <p class="text-xs font-medium text-amber-400 uppercase tracking-wider">Dialing / Speaking</p>
+        <p class="text-2xl font-bold text-amber-300 mt-1" id="statQueued">0</p>
+      </div>
+      <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-4">
+        <p class="text-xs font-medium text-emerald-400 uppercase tracking-wider">Answered / Completed</p>
+        <p class="text-2xl font-bold text-emerald-300 mt-1" id="statAnswered">0</p>
+      </div>
+      <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-4">
+        <p class="text-xs font-medium text-rose-400 uppercase tracking-wider">Failed / Rejected</p>
+        <p class="text-2xl font-bold text-rose-300 mt-1" id="statFailed">0</p>
+      </div>
+      <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-4">
+        <p class="text-xs font-medium text-indigo-400 uppercase tracking-wider">Active Agent</p>
+        <p class="text-sm font-bold text-indigo-300 truncate mt-2" id="statAgentName">customer-support-29a</p>
+      </div>
+    </div>
+
+    <!-- Campaign Setup Section -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- Upload & Delay Settings -->
+      <div class="lg:col-span-2 bg-slate-800/40 border border-slate-800 rounded-2xl p-6 space-y-5">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-semibold flex items-center gap-2">
+            <i data-lucide="file-spreadsheet" class="w-5 h-5 text-indigo-400"></i>
+            1. Upload Excel / CSV Leads
+          </h2>
+          <span class="text-xs text-slate-400">Supported: .xlsx, .xls, .csv</span>
+        </div>
+
+        <!-- Drag & Drop Zone -->
+        <div 
+          onclick="document.getElementById('excelFileInput').click()"
+          class="border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-xl p-6 text-center cursor-pointer transition bg-slate-900/50 hover:bg-slate-900"
+        >
+          <input type="file" id="excelFileInput" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleFileUpload(event)" />
+          <i data-lucide="upload-cloud" class="w-10 h-10 text-slate-400 mx-auto mb-2"></i>
+          <p class="text-sm font-medium text-slate-200">Click to select or drag & drop Excel file here</p>
+          <p class="text-xs text-slate-500 mt-1">Columns required: <span class="text-indigo-400">Phone</span> (or Mobile) and optional <span class="text-indigo-400">Name</span></p>
+        </div>
+
+        <!-- Controls Row -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+          <!-- Agent Selection -->
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">Select AI Agent</label>
+            <div class="flex gap-1.5">
+              <select id="agentSelect" class="bg-slate-900 border border-slate-700 text-sm rounded-lg p-2.5 text-white w-full focus:ring-1 focus:ring-indigo-500 outline-none">
+                <option value="customer-support-29a">customer-support-29a (Default)</option>
+                <option value="outbound-caller">outbound-caller (Local Worker)</option>
+              </select>
+              <button onclick="openAddAgentModal()" title="Add Custom Agent" class="px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg flex items-center justify-center">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Delay Between Calls -->
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">Delay Between Calls</label>
+            <select id="callDelaySelect" class="bg-slate-900 border border-slate-700 text-sm rounded-lg p-2.5 text-white w-full focus:ring-1 focus:ring-indigo-500 outline-none">
+              <option value="15">15 Seconds</option>
+              <option value="30" selected>30 Seconds</option>
+              <option value="60">1 Minute</option>
+              <option value="120">2 Minutes</option>
+            </select>
+          </div>
+
+          <!-- Campaign Actions -->
+          <div class="flex items-end gap-2">
+            <button 
+              id="startCampaignBtn" 
+              onclick="startCampaign()" 
+              class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition disabled:opacity-50"
+            >
+              <i data-lucide="play" class="w-4 h-4"></i>
+              Start Calls
+            </button>
+            <button 
+              id="stopCampaignBtn" 
+              onclick="stopCampaign()" 
+              disabled
+              class="bg-rose-600/80 hover:bg-rose-600 text-white font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition disabled:opacity-50"
+            >
+              <i data-lucide="square" class="w-4 h-4"></i>
+              Stop
+            </button>
+          </div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div id="progressContainer" class="hidden space-y-1">
+          <div class="flex justify-between text-xs text-slate-400">
+            <span id="progressText">Calling in progress...</span>
+            <span id="progressPercent">0%</span>
+          </div>
+          <div class="w-full bg-slate-900 rounded-full h-2 overflow-hidden">
+            <div id="progressBar" class="bg-indigo-500 h-2 rounded-full transition-all duration-300 w-0"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Webhook & Instructions Card -->
+      <div class="bg-slate-800/40 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between space-y-4">
+        <div>
+          <h3 class="text-sm font-semibold text-slate-200 flex items-center gap-2 mb-2">
+            <i data-lucide="info" class="w-4 h-4 text-indigo-400"></i>
+            LiveKit Summary Webhook URL
+          </h3>
+          <p class="text-xs text-slate-400 mb-3">
+            Paste this URL inside your LiveKit Cloud Agent settings (<span class="text-indigo-300 font-mono">Call ending &rarr; Summary endpoint URL</span>) or in <span class="text-indigo-300 font-mono">Settings &rarr; Webhooks</span>:
+          </p>
+          <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800 flex items-center justify-between">
+            <code class="text-xs text-emerald-400 font-mono break-all" id="summaryEndpointDisplay">
+              https://bizagent-3r8z.onrender.com/api/webhook/summary
+            </code>
+            <button onclick="copyWebhookUrl()" class="p-1 hover:text-white text-slate-400 transition" title="Copy">
+              <i data-lucide="copy" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="border-t border-slate-800 pt-3">
+          <h4 class="text-xs font-semibold text-slate-300 mb-1">Features Included:</h4>
+          <ul class="text-xs text-slate-400 space-y-1">
+            <li>&#10003; Firebase Authentication protected</li>
+            <li>&#10003; Automatic customer name greeting in call</li>
+            <li>&#10003; Guaranteed OpenRouter AI Call Summaries</li>
+            <li>&#10003; Smart sequence (waits for call to finish)</li>
+            <li>&#10003; Export report to Excel with AI summary</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Leads Table Section -->
+    <div class="bg-slate-800/40 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+      <div class="p-4 border-b border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+          <i data-lucide="list" class="w-5 h-5 text-indigo-400"></i>
+          <h3 class="font-semibold text-slate-200">Contact Campaign Queue</h3>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400" id="tableCountBadge">0 leads</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="exportToExcel()" class="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg text-slate-300 flex items-center gap-1.5 transition">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+            Export Excel
+          </button>
+          <button onclick="clearLeads()" class="text-xs bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/40 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            Clear All
+          </button>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto max-h-[500px]">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-slate-900/80 text-slate-400 font-semibold uppercase tracking-wider sticky top-0 backdrop-blur z-10 border-b border-slate-800">
+            <tr>
+              <th class="py-3 px-4">#</th>
+              <th class="py-3 px-4">Name</th>
+              <th class="py-3 px-4">Phone Number</th>
+              <th class="py-3 px-4">Agent</th>
+              <th class="py-3 px-4">Status</th>
+              <th class="py-3 px-4 min-w-[280px]">AI Call Summary</th>
+              <th class="py-3 px-4">Sentiment</th>
+              <th class="py-3 px-4 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="leadsTableBody" class="divide-y divide-slate-800/60 font-medium">
+            <tr>
+              <td colspan="8" class="text-center py-12 text-slate-500">
+                <i data-lucide="inbox" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                No leads loaded yet. Upload an Excel or CSV file above to start!
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <!-- Add Agent Modal -->
+  <div id="addAgentModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-semibold text-white">Add New LiveKit Agent</h3>
+        <button onclick="closeAddAgentModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1">Agent Name (as in LiveKit)</label>
+        <input type="text" id="newAgentName" placeholder="e.g. sales-agent-v1" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-white outline-none focus:border-indigo-500" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1">Agent ID (Optional, e.g. CA_xxx)</label>
+        <input type="text" id="newAgentId" placeholder="e.g. CA_Vd2CJyaU2ejf" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-white outline-none focus:border-indigo-500" />
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeAddAgentModal()" class="px-4 py-2 text-xs text-slate-400 hover:text-white">Cancel</button>
+        <button onclick="saveNewAgent()" class="px-4 py-2 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg">Save Agent</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // -------------------------------------------------------------
+    // Firebase Setup & Auth
+    // -------------------------------------------------------------
+    const firebaseConfig = {
+      apiKey: "AIzaSyAc0MIYR4iMlNrdrBeOCLyN5kwe0zc-XJk",
+      authDomain: "botxpro-6fb8b.firebaseapp.com",
+      databaseURL: "https://botxpro-6fb8b-default-rtdb.firebaseio.com",
+      projectId: "botxpro-6fb8b",
+      storageBucket: "botxpro-6fb8b.firebasestorage.app",
+      messagingSenderId: "842749922972",
+      appId: "1:842749922972:web:cdfd4768bbbdd84a586759"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const auth = firebase.auth();
+
+    // Firebase Auth State Listener
+    auth.onAuthStateChanged((user) => {
+      const authCard = document.getElementById('authContainer');
+      const appCard = document.getElementById('appContainer');
+      const userNav = document.getElementById('navUserSection');
+
+      if (user) {
+        authCard.classList.add('hidden');
+        appCard.classList.remove('hidden');
+        userNav.classList.remove('hidden');
+        document.getElementById('userEmailBadge').innerText = user.email || 'Admin';
+        listenToFirebaseUpdates();
+      } else {
+        authCard.classList.remove('hidden');
+        appCard.classList.add('hidden');
+        userNav.classList.add('hidden');
+      }
+      lucide.createIcons();
+    });
+
+    async function handleEmailLogin() {
+      const email = document.getElementById('authEmail').value.trim();
+      const password = document.getElementById('authPassword').value;
+      const errorDiv = document.getElementById('authError');
+      errorDiv.classList.add('hidden');
+
+      if (!email || !password) {
+        errorDiv.innerText = 'Please provide both email and password.';
+        errorDiv.classList.remove('hidden');
+        return;
+      }
+
+      try {
+        await auth.signInWithEmailAndPassword(email, password);
+      } catch (err) {
+        errorDiv.innerText = err.message || 'Login failed. Verify credentials in Firebase Console.';
+        errorDiv.classList.remove('hidden');
+      }
+    }
+
+    async function handleLogout() {
+      await auth.signOut();
+    }
+
+    // -------------------------------------------------------------
+    // State & Backend Config
+    // -------------------------------------------------------------
+    let leads = [];
+    let isCampaignRunning = false;
+    let shouldStopCampaign = false;
+
+    // Backend URL persistence (Defaulted to live Render backend)
+    const backendInput = document.getElementById('backendUrl');
+    let savedBackend = localStorage.getItem('botxpro_backend_url');
+    if (!savedBackend || savedBackend.includes('localhost')) {
+      savedBackend = 'https://bizagent-3r8z.onrender.com';
+      localStorage.setItem('botxpro_backend_url', savedBackend);
+    }
+    backendInput.value = savedBackend;
+    updateWebhookDisplay(savedBackend);
+
+    backendInput.addEventListener('input', (e) => {
+      const url = e.target.value.trim().replace(/\/$/, "");
+      localStorage.setItem('botxpro_backend_url', url);
+      updateWebhookDisplay(url);
+    });
+
+    function updateWebhookDisplay(url) {
+      const display = document.getElementById('summaryEndpointDisplay');
+      if (url) {
+        display.innerText = `${url}/api/webhook/summary`;
+      } else {
+        display.innerText = `https://bizagent-3r8z.onrender.com/api/webhook/summary`;
+      }
+    }
+
+    function copyWebhookUrl() {
+      const text = document.getElementById('summaryEndpointDisplay').innerText;
+      navigator.clipboard.writeText(text);
+      alert('Webhook URL copied to clipboard!\nPaste it into LiveKit: Call ending -> Summary endpoint URL');
+    }
+
+    async function testBackendConnection() {
+      const url = backendInput.value.trim().replace(/\/$/, "");
+      try {
+        const resp = await fetch(`${url}/`, { method: 'GET' });
+        if (resp.ok) {
+          const data = await resp.json();
+          alert(`Backend Connected Successfully!\nTrunk: ${data.trunk_id}\nDefault Agent: ${data.default_agent}`);
+          document.getElementById('backendDot').className = "inline-block w-2.5 h-2.5 rounded-full bg-emerald-500";
+        } else {
+          alert(`Backend responded with status: ${resp.status}`);
+        }
+      } catch (e) {
+        alert(`Could not connect to backend at ${url}.\nMake sure Render server is running!\nError: ${e.message}`);
+        document.getElementById('backendDot').className = "inline-block w-2.5 h-2.5 rounded-full bg-rose-500";
+      }
+    }
+
+    // -------------------------------------------------------------
+    // Excel / CSV File Parsing
+    // -------------------------------------------------------------
+    function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheet = workbook.SheetNames[0];
+          const rawRows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet]);
+
+          if (!rawRows || rawRows.length === 0) {
+            alert('The uploaded file contains no rows!');
+            return;
+          }
+
+          leads = [];
+          rawRows.forEach((row, idx) => {
+            // Find phone number field
+            let phone = row.Phone || row.phone || row.Mobile || row.mobile || row.Number || row.number || row.Contact || row.contact || "";
+            phone = String(phone).trim().replace(/[\s\-()]/g, '');
+
+            if (!phone) return;
+
+            // Auto-format standard 10 digit Indian number to E.164
+            if (/^\d{10}$/.test(phone)) {
+              phone = '+91' + phone;
+            } else if (!phone.startsWith('+')) {
+              phone = '+' + phone;
+            }
+
+            const name = row.Name || row.name || row.Customer || row.customer || `Customer ${idx + 1}`;
+
+            leads.push({
+              id: idx,
+              name: name,
+              phone: phone,
+              agent: document.getElementById('agentSelect').value,
+              status: 'Pending',
+              summary: 'Waiting for call...',
+              sentiment: '—',
+            });
+          });
+
+          renderLeadsTable();
+          updateKPIs();
+          listenToFirebaseUpdates();
+        } catch (err) {
+          alert('Error parsing file: ' + err.message);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    // -------------------------------------------------------------
+    // Firebase Realtime Listener
+    // -------------------------------------------------------------
+    function sanitizeKey(phone) {
+      return phone.replace(/[.$#\[\]\/]/g, '_');
+    }
+
+    function listenToFirebaseUpdates() {
+      db.ref('calls').on('value', (snapshot) => {
+        const val = snapshot.val();
+        if (!val) return;
+
+        leads.forEach(lead => {
+          const cleanPhone = sanitizeKey(lead.phone);
+          let remote = val[cleanPhone];
+
+          // Suffix match fallback (last 10 digits)
+          if (!remote) {
+            const digits = lead.phone.replace(/\D/g, '').slice(-10);
+            for (const [k, v] of Object.entries(val)) {
+              if (k.includes(digits)) {
+                remote = v;
+                break;
+              }
+            }
+          }
+
+          if (remote) {
+            lead.status = remote.status || lead.status;
+            if (remote.ai_summary) lead.summary = remote.ai_summary;
+            if (remote.sentiment) lead.sentiment = remote.sentiment;
+          }
+        });
+
+        renderLeadsTable();
+        updateKPIs();
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Table Rendering
+    // -------------------------------------------------------------
+    function renderLeadsTable() {
+      const tbody = document.getElementById('leadsTableBody');
+      if (leads.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8" class="text-center py-12 text-slate-500">
+              <i data-lucide="inbox" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+              No leads loaded yet. Upload an Excel or CSV file above to start!
+            </td>
+          </tr>
+        `;
+        lucide.createIcons();
+        return;
+      }
+
+      tbody.innerHTML = leads.map((lead, idx) => {
+        let badgeClass = 'badge-pending';
+        const s = (lead.status || '').toLowerCase();
+        if (s.includes('speak') || s.includes('in call')) badgeClass = 'bg-indigo-900/80 text-indigo-200 border border-indigo-500/40 animate-pulse';
+        else if (s.includes('dial') || s.includes('queue')) badgeClass = 'badge-dialing';
+        else if (s.includes('ring')) badgeClass = 'badge-ringing';
+        else if (s.includes('answer') || s.includes('complete')) badgeClass = 'badge-answered';
+        else if (s.includes('fail') || s.includes('reject') || s.includes('busy') || s.includes('not answered')) badgeClass = 'badge-failed';
+
+        return `
+          <tr class="hover:bg-slate-800/30 transition">
+            <td class="py-3 px-4 text-slate-500">${idx + 1}</td>
+            <td class="py-3 px-4 font-semibold text-white">${lead.name}</td>
+            <td class="py-3 px-4 font-mono text-indigo-300">${lead.phone}</td>
+            <td class="py-3 px-4 text-xs text-slate-400">${lead.agent}</td>
+            <td class="py-3 px-4">
+              <span class="px-2.5 py-1 rounded-full text-[11px] font-semibold ${badgeClass}">
+                ${lead.status}
+              </span>
+            </td>
+            <td class="py-3 px-4 text-slate-300 text-xs">${lead.summary || '—'}</td>
+            <td class="py-3 px-4">
+              <span class="text-xs ${lead.sentiment === 'Interested' || lead.sentiment === 'Positive' ? 'text-emerald-400 font-semibold' : 'text-slate-400'}">
+                ${lead.sentiment || '—'}
+              </span>
+            </td>
+            <td class="py-3 px-4 text-right flex items-center justify-end gap-1.5">
+              <button onclick="requestAiSummary(${idx})" title="Generate or refresh AI Summary" class="text-xs bg-indigo-950/60 hover:bg-indigo-800/80 text-indigo-300 border border-indigo-700/40 px-2 py-1 rounded transition">
+                AI Summary
+              </button>
+              <button onclick="callSingleNumber(${idx})" class="text-xs bg-slate-800 hover:bg-emerald-600 px-2.5 py-1 rounded text-slate-300 hover:text-white transition">
+                Call Now
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      document.getElementById('tableCountBadge').innerText = `${leads.length} leads`;
+      lucide.createIcons();
+    }
+
+    function updateKPIs() {
+      document.getElementById('statTotal').innerText = leads.length;
+      document.getElementById('statQueued').innerText = leads.filter(l => /dial|ring|pending|speak|in call/i.test(l.status)).length;
+      document.getElementById('statAnswered').innerText = leads.filter(l => /answer|complete/i.test(l.status)).length;
+      document.getElementById('statFailed').innerText = leads.filter(l => /fail|reject|busy|error|not answered/i.test(l.status)).length;
+      document.getElementById('statAgentName').innerText = document.getElementById('agentSelect').value;
+    }
+
+    // -------------------------------------------------------------
+    // Single & Bulk Calling
+    // -------------------------------------------------------------
+    async function triggerApiCall(lead) {
+      const backendUrl = backendInput.value.trim().replace(/\/$/, "");
+      const resp = await fetch(`${backendUrl}/api/call`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone_number: lead.phone,
+          name: lead.name,
+          agent_name: lead.agent || document.getElementById('agentSelect').value,
+        })
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+        throw new Error(err.detail || 'Call trigger failed');
+      }
+      return await resp.json();
+    }
+
+    async function requestAiSummary(idx) {
+      const lead = leads[idx];
+      const backendUrl = backendInput.value.trim().replace(/\/$/, "");
+      lead.summary = 'Generating OpenRouter summary...';
+      renderLeadsTable();
+
+      try {
+        const resp = await fetch(`${backendUrl}/api/summarize_call`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phone_number: lead.phone,
+            name: lead.name,
+            agent_name: lead.agent,
+          })
+        });
+        if (resp.ok) {
+          const res = await resp.json();
+          lead.status = res.data.status || 'Answered';
+          lead.summary = res.data.ai_summary;
+          lead.sentiment = res.data.sentiment;
+        } else {
+          lead.summary = 'Could not generate summary.';
+        }
+      } catch (e) {
+        lead.summary = 'Error: ' + e.message;
+      }
+      renderLeadsTable();
+      updateKPIs();
+    }
+
+    async function callSingleNumber(idx) {
+      const lead = leads[idx];
+      lead.status = 'Dialing...';
+      renderLeadsTable();
+
+      try {
+        await triggerApiCall(lead);
+        lead.status = 'Ringing...';
+      } catch (err) {
+        lead.status = 'Failed';
+        lead.summary = err.message;
+      }
+      renderLeadsTable();
+      updateKPIs();
+    }
+
+    async function startCampaign() {
+      if (leads.length === 0) {
+        alert('Please upload an Excel list first!');
+        return;
+      }
+
+      isCampaignRunning = true;
+      shouldStopCampaign = false;
+
+      document.getElementById('startCampaignBtn').disabled = true;
+      document.getElementById('stopCampaignBtn').disabled = false;
+      document.getElementById('progressContainer').classList.remove('hidden');
+
+      const delaySec = parseInt(document.getElementById('callDelaySelect').value) || 30;
+      const selectedAgent = document.getElementById('agentSelect').value;
+
+      for (let i = 0; i < leads.length; i++) {
+        if (shouldStopCampaign) break;
+
+        const lead = leads[i];
+        lead.agent = selectedAgent;
+        lead.status = 'Dialing...';
+        renderLeadsTable();
+        updateKPIs();
+
+        try {
+          await triggerApiCall(lead);
+          lead.status = 'Ringing / Dispatched';
+        } catch (err) {
+          lead.status = 'Failed';
+          lead.summary = err.message;
+        }
+
+        renderLeadsTable();
+        updateKPIs();
+
+        // Update progress
+        const percent = Math.round(((i + 1) / leads.length) * 100);
+        document.getElementById('progressBar').style.width = percent + '%';
+        document.getElementById('progressPercent').innerText = percent + '%';
+
+        // 1. Wait for current call to finish before moving to next lead
+        if (lead.status !== 'Failed' && i < leads.length - 1 && !shouldStopCampaign) {
+          const maxWaitSeconds = 180; // max 3 mins call timeout
+          let elapsed = 0;
+          while (elapsed < maxWaitSeconds && !shouldStopCampaign) {
+            const s = (lead.status || '').toLowerCase();
+            // Exit wait once call is finished, answered & ended, or failed
+            if (s.includes('complete') || s.includes('fail') || s.includes('reject') || s.includes('busy')) {
+              break;
+            }
+            document.getElementById('progressText').innerText = `Talking with ${lead.name} (${elapsed}s)... Waiting for call to end.`;
+            await new Promise(r => setTimeout(r, 2000));
+            elapsed += 2;
+          }
+        }
+
+        // Auto-request AI summary if not populated yet
+        if (!lead.summary || lead.summary.includes('Waiting for call')) {
+          requestAiSummary(i);
+        }
+
+        // 2. Buffer delay before next call
+        if (i < leads.length - 1 && !shouldStopCampaign) {
+          for (let s = delaySec; s > 0; s--) {
+            if (shouldStopCampaign) break;
+            document.getElementById('progressText').innerText = `Call ended. Waiting ${s}s buffer before calling ${leads[i + 1].name}...`;
+            await new Promise(r => setTimeout(r, 1000));
+          }
+        }
+      }
+
+      isCampaignRunning = false;
+      document.getElementById('startCampaignBtn').disabled = false;
+      document.getElementById('stopCampaignBtn').disabled = true;
+      document.getElementById('progressText').innerText = shouldStopCampaign ? 'Campaign stopped.' : 'Campaign completed!';
+    }
+
+    function stopCampaign() {
+      shouldStopCampaign = true;
+      document.getElementById('stopCampaignBtn').disabled = true;
+      document.getElementById('progressText').innerText = 'Stopping campaign...';
+    }
+
+    function clearLeads() {
+      if (confirm('Clear all contacts from the queue?')) {
+        leads = [];
+        renderLeadsTable();
+        updateKPIs();
+        document.getElementById('progressContainer').classList.add('hidden');
+      }
+    }
+
+    function exportToExcel() {
+      if (leads.length === 0) {
+        alert('No data to export!');
+        return;
+      }
+
+      const exportRows = leads.map((l, idx) => ({
+        "Sr No": idx + 1,
+        "Customer Name": l.name,
+        "Phone Number": l.phone,
+        "Agent": l.agent,
+        "Call Status": l.status,
+        "AI Call Summary": l.summary,
+        "Customer Sentiment": l.sentiment,
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(exportRows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Campaign Report");
+      XLSX.writeFile(wb, `Call_Campaign_Report_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    }
+
+    // -------------------------------------------------------------
+    // Agent Management Modal
+    // -------------------------------------------------------------
+    function openAddAgentModal() {
+      document.getElementById('addAgentModal').classList.remove('hidden');
+    }
+    function closeAddAgentModal() {
+      document.getElementById('addAgentModal').classList.add('hidden');
+    }
+    function saveNewAgent() {
+      const name = document.getElementById('newAgentName').value.trim();
+      if (!name) {
+        alert('Please enter an Agent Name');
+        return;
+      }
+      const select = document.getElementById('agentSelect');
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.text = `${name}`;
+      select.add(opt);
+      select.value = name;
+      closeAddAgentModal();
+      updateKPIs();
+    }
+
+    lucide.createIcons();
+  </script>
+</body>
+</html>
