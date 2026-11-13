@@ -1,7 +1,0 @@
-livekit-agents~=1.8
-livekit-api~=1.2
-python-dotenv>=1.0
-fastapi>=0.110.0
-uvicorn>=0.28.0
-requests>=2.31.0
-pydantic>=2.0.0
